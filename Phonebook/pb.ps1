@@ -98,7 +98,7 @@ function Process-Command {
             $group = $matches[1]
             $clean = $clean -replace "#$group", ""
         }
-        if ($clean -match "!(Red|Yellow|Green|Cyan|Blue|Magenta|White|Gray|DarkGray|DarkCyan)") {
+        if ($clean -match "!(DarkBlue|DarkGreen|DarkCyan|DarkRed|DarkMagenta|DarkYellow|Gray|DarkGray|Blue|Green|Cyan|Red|Magenta|Yellow|White)") {
             $color = $matches[1]
             $clean = $clean -replace "!$color", ""
         }
