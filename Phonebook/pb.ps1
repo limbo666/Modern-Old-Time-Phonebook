@@ -231,6 +231,21 @@ function Process-Command {
     Write-Host "  │" -ForegroundColor DarkCyan -NoNewline
     Write-Host (" 📦 PHONEBOOK v.2.2").PadRight($boxWidth - 2) -ForegroundColor Cyan -NoNewline
     Write-Host "│" -ForegroundColor DarkCyan
+
+    # Credits Line Computation
+    $cred1 = " 👤 Created by Nikos Georgousis "
+    $cred2 = "| "
+    $cred3 = "Original idea by Scott Brodsky"
+    $totalCredLen = $cred1.Length + $cred2.Length + $cred3.Length
+    $padSpace = $boxWidth - 2 - $totalCredLen
+    if ($padSpace -lt 0) { $padSpace = 0 }
+
+    Write-Host "  │" -ForegroundColor DarkCyan -NoNewline
+    Write-Host $cred1 -ForegroundColor White -NoNewline
+    Write-Host $cred2 -ForegroundColor DarkGray -NoNewline
+    Write-Host $cred3 -ForegroundColor Gray -NoNewline
+    Write-Host (" " * $padSpace) -NoNewline
+    Write-Host "│" -ForegroundColor DarkCyan
     
     Write-Host "  │" -ForegroundColor DarkCyan -NoNewline
     Write-Host (" 📍 $baseDir").PadRight($boxWidth - 2) -ForegroundColor DarkGray -NoNewline
@@ -271,7 +286,7 @@ function Process-Command {
             Write-Host ("  ╰" + ("─" * ($boxWidth - 2)) + "╯") -ForegroundColor DarkCyan
         }
     } else {
-        # --- RED ERROR FRAME (with your padding fix) ---
+        # --- RED ERROR FRAME ---
         $errBoxWidth = 30
         Write-Host ""
         Write-Host ("  ╭" + ("─" * ($errBoxWidth - 2)) + "╮") -ForegroundColor Red
