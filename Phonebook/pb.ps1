@@ -9,6 +9,55 @@ if (-not (Test-Path -LiteralPath $dbPath)) {
     try { Set-Content -LiteralPath $dbPath -Value $initText -Encoding UTF8 } catch {}
 }
 
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+
+function Set-WindowToMouseScreen {
+    Start-Sleep -Milliseconds 150
+    
+    $signature = @'
+    [DllImport("user32.dll")]
+    public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+    [DllImport("user32.dll")]
+    public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetConsoleWindow();
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
+    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+'@
+    if (-not ("Win32.Win32Utils" -as [type])) {
+        Add-Type -MemberDefinition $signature -Name "Win32Utils" -Namespace "Win32" -PassThru | Out-Null
+    }
+    
+    [Win32.Win32Utils]::SetProcessDPIAware() | Out-Null
+    
+    $hwnd = [Win32.Win32Utils]::GetConsoleWindow()
+    $topHwnd = [Win32.Win32Utils]::GetAncestor($hwnd, 2)
+    if ($topHwnd -eq [IntPtr]::Zero) { $topHwnd = $hwnd }
+    
+    if ($topHwnd -ne [IntPtr]::Zero) {
+        $mousePos = [System.Windows.Forms.Cursor]::Position
+        $currentScreen = [System.Windows.Forms.Screen]::FromPoint($mousePos)
+        $screenArea = $currentScreen.WorkingArea
+        
+        $rect = New-Object Win32.Win32Utils+RECT
+        [Win32.Win32Utils]::GetWindowRect($topHwnd, [ref]$rect) | Out-Null
+        $wWidth = $rect.Right - $rect.Left
+        $wHeight = $rect.Bottom - $rect.Top
+        
+        if ($wWidth -eq 0 -or $wHeight -eq 0) { $wWidth = 800; $wHeight = 600 }
+        
+        $posX = $screenArea.Left + [math]::Max(0, [math]::Round(($screenArea.Width - $wWidth) / 2))
+        $posY = $screenArea.Top + [math]::Max(0, [math]::Round(($screenArea.Height - $wHeight) / 2))
+        
+        [Win32.Win32Utils]::MoveWindow($topHwnd, $posX, $posY, $wWidth, $wHeight, $true) | Out-Null
+    }
+}
+
+Set-WindowToMouseScreen
+
 function Process-Command {
     param([string]$InputStr)
     
@@ -33,6 +82,8 @@ function Process-Command {
         $value = ""
     } elseif ($InputStr -eq "q" -or $InputStr -eq "exit" -or $InputStr -eq "quit") {
         exit
+ } elseif ($InputStr -eq "*") {
+        $isSearch = $false
     } elseif ($InputStr -ne "") {
         $isSearch = $true
         $searchQueryRaw = $InputStr
@@ -44,6 +95,7 @@ function Process-Command {
     # --- IN-APP HELP SYSTEM ---
     if ($action -eq "-help") {
         Clear-Host
+        Set-WindowToMouseScreen
         $boxWidth = 72
         $topicName = if ($value) { $value.ToUpper() } else { "INDEX" }
         
@@ -225,14 +277,14 @@ function Process-Command {
 
     # --- UI RENDERING: TOP TITLE BOX ---
     Clear-Host
+    Set-WindowToMouseScreen
     Write-Host ""
     Write-Host ("  ╭" + ("─" * ($boxWidth - 2)) + "╮") -ForegroundColor DarkCyan
     
     Write-Host "  │" -ForegroundColor DarkCyan -NoNewline
-    Write-Host (" 📦 PHONEBOOK v.2.2").PadRight($boxWidth - 2) -ForegroundColor Cyan -NoNewline
+    Write-Host (" 📦 PHONEBOOK v.2.3").PadRight($boxWidth - 2) -ForegroundColor Cyan -NoNewline
     Write-Host "│" -ForegroundColor DarkCyan
 
-    # Credits Line Computation
     $cred1 = " 👤 Created by Nikos Georgousis "
     $cred2 = "| "
     $cred3 = "Original idea by Scott Brodsky"
@@ -253,57 +305,65 @@ function Process-Command {
     
     Write-Host ("  ╰" + ("─" * ($boxWidth - 2)) + "╯") -ForegroundColor DarkCyan
 
-    # --- UI RENDERING: SEARCH TERM ---
     if ($isSearch) { Write-Host "`n  🔍 Search: '$searchQueryRaw'" -ForegroundColor Yellow } else { Write-Host "" }
 
-    # --- UI RENDERING: GROUPED RESULTS BOXES ---
-    if ($results.Count -gt 0) {
-        $groupedResults = $results | Sort-Object Group, Name | Group-Object Group
-
-        foreach ($g in $groupedResults) {
-            $gName = " " + $g.Name.ToUpper() + " "
-            $remLen = $boxWidth - 3 - $gName.Length
-            if ($remLen -lt 0) { $remLen = 0 }
-            
-            Write-Host ("  ╭─") -ForegroundColor DarkCyan -NoNewline
-            Write-Host $gName -ForegroundColor DarkCyan -BackgroundColor Black -NoNewline
-            Write-Host ("─" * $remLen + "╮") -ForegroundColor DarkCyan
-            
-            $i = 0
-            foreach ($item in $g.Group) {
-                $rowColor = "White"
-                if ($item.Color -and [Enum]::IsDefined([ConsoleColor], $item.Color)) {
-                    $rowColor = $item.Color
-                } elseif ($i % 2 -eq 0) { $rowColor = "White" } else { $rowColor = "Gray" }
-                
-                Write-Host "  │ " -ForegroundColor DarkCyan -NoNewline
-                Write-Host ($item.Name.PadRight($maxNameLen)) -ForegroundColor $rowColor -NoNewline
-                Write-Host " " -NoNewline
-                Write-Host ($item.Phone.PadRight($phonePadLen)) -ForegroundColor Green -NoNewline
-                Write-Host "│" -ForegroundColor DarkCyan
-                $i++
-            }
-            Write-Host ("  ╰" + ("─" * ($boxWidth - 2)) + "╯") -ForegroundColor DarkCyan
-        }
-    } else {
-        # --- RED ERROR FRAME ---
-        $errBoxWidth = 30
-        Write-Host ""
-        Write-Host ("  ╭" + ("─" * ($errBoxWidth - 2)) + "╮") -ForegroundColor Red
-        Write-Host "  │" -ForegroundColor Red -NoNewline
-        Write-Host (" ❌ No matches found.").PadRight($errBoxWidth - 3) -ForegroundColor Red -NoNewline
-        Write-Host "│" -ForegroundColor Red
-        Write-Host ("  ╰" + ("─" * ($errBoxWidth - 2)) + "╯") -ForegroundColor Red
+    # --- MINIMAL MODE CHECK ---
+    $showList = $true
+    if ($script:minimalMode -and [string]::IsNullOrWhiteSpace($InputStr)) {
+        $showList = $false
     }
 
-    # --- UI RENDERING: INSTRUCTIONS DASHBOARD ---
+    if ($showList) {
+        if ($results.Count -gt 0) {
+            $groupedResults = $results | Sort-Object Group, Name | Group-Object Group
+
+            foreach ($g in $groupedResults) {
+                $gName = " " + $g.Name.ToUpper() + " "
+                $remLen = $boxWidth - 3 - $gName.Length
+                if ($remLen -lt 0) { $remLen = 0 }
+                
+                Write-Host ("  ╭─") -ForegroundColor DarkCyan -NoNewline
+                Write-Host $gName -ForegroundColor DarkCyan -BackgroundColor Black -NoNewline
+                Write-Host ("─" * $remLen + "╮") -ForegroundColor DarkCyan
+                
+                $i = 0
+                foreach ($item in $g.Group) {
+                    $rowColor = "White"
+                    if ($item.Color -and [Enum]::IsDefined([ConsoleColor], $item.Color)) {
+                        $rowColor = $item.Color
+                    } elseif ($i % 2 -eq 0) { $rowColor = "White" } else { $rowColor = "Gray" }
+                    
+                    Write-Host "  │ " -ForegroundColor DarkCyan -NoNewline
+                    Write-Host ($item.Name.PadRight($maxNameLen)) -ForegroundColor $rowColor -NoNewline
+                    Write-Host " " -NoNewline
+                    Write-Host ($item.Phone.PadRight($phonePadLen)) -ForegroundColor Green -NoNewline
+                    Write-Host "│" -ForegroundColor DarkCyan
+                    $i++
+                }
+                Write-Host ("  ╰" + ("─" * ($boxWidth - 2)) + "╯") -ForegroundColor DarkCyan
+            }
+        } else {
+            $errBoxWidth = 30
+            Write-Host ""
+            Write-Host ("  ╭" + ("─" * ($errBoxWidth - 2)) + "╮") -ForegroundColor Red
+            Write-Host "  │" -ForegroundColor Red -NoNewline
+            Write-Host (" ❌ No matches found.").PadRight($errBoxWidth - 3) -ForegroundColor Red -NoNewline
+            Write-Host "│" -ForegroundColor Red
+            Write-Host ("  ╰" + ("─" * ($errBoxWidth - 2)) + "╯") -ForegroundColor Red
+        }
+    }
+
     $safeCount = if ($null -ne $results) { @($results).Count } else { 0 }
-    Write-Host "`n  Total records: $safeCount" -ForegroundColor Cyan
-    Write-Host ""
+    if ($showList) {
+        Write-Host "`n  Total records: $safeCount" -ForegroundColor Cyan
+    } else {
+        Write-Host "`n  Total records: $safeCount (Search * to display the entire list)" -ForegroundColor DarkGray
+    }
     
+    Write-Host ""
     Write-Host "  💡 DASHBOARD:" -ForegroundColor Yellow
     
-    Write-Host "  Search : " -ForegroundColor DarkGray -NoNewline; Write-Host "Type keyword".PadRight(28) -ForegroundColor White -NoNewline
+    Write-Host "  Search : " -ForegroundColor DarkGray -NoNewline; Write-Host "Type keyword (or * for all)".PadRight(28) -ForegroundColor White -NoNewline
     Write-Host "Add    : " -ForegroundColor DarkGray -NoNewline; Write-Host "-add `"Name Num #Grp !Col`"" -ForegroundColor Green
 
     Write-Host "  Delete : " -ForegroundColor DarkGray -NoNewline; Write-Host "-del `"Name`"".PadRight(28) -ForegroundColor Red -NoNewline
@@ -318,9 +378,17 @@ function Process-Command {
     Write-Host "`n  Quit   : " -ForegroundColor DarkGray -NoNewline; Write-Host "q`n" -ForegroundColor Yellow
 }
 
-if ($args.Count -gt 0) {
-    $cliArgs = $args -join " "
-    Process-Command $cliArgs
+# --- CLI ARGUMENT PARSER ---
+$script:minimalMode = $false
+$execArgs = @()
+
+foreach ($arg in $args) {
+    if ($arg -eq "-m") { $script:minimalMode = $true }
+    else { $execArgs += $arg }
+}
+
+if ($execArgs.Count -gt 0) {
+    Process-Command ($execArgs -join " ")
     exit
 }
 

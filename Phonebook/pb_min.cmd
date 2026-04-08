@@ -6,5 +6,5 @@ if not defined MINIMIZED (
 )
 
 set "BASE_DIR=%~dp0"
-start "" conhost.exe powershell -NoProfile -ExecutionPolicy Bypass -File "%BASE_DIR%pb.ps1" %*
+start "" conhost.exe powershell -NoProfile -ExecutionPolicy Bypass -File "%BASE_DIR%pb.ps1" -m %*
 exit
